@@ -23,6 +23,25 @@ iwconfig wlan0 power off
 exit 0
 
 
+## I2C
+https://learn.adafruit.com/adafruits-raspberry-pi-lesson-4-gpio-setup/configuring-i2c
+## I2C for PiZero
+pi@raspberrypi:~# i2cdetect -l
+pi@raspberrypi:~# sudo nano /etc/modules
+# /etc/modules: kernel modules to load at boot time.
+#
+# This file contains the names of kernel modules that should be loaded
+# at boot time, one per line. Lines beginning with "#" are ignored.
+
+i2c-dev
+i2c-bcm2835
+
+
+https://www.raspberrypi.org/forums/viewtopic.php?t=228084
+
+
+
+
 Node Red
 https://nodered.org/docs/getting-started/raspberrypi
 
@@ -37,6 +56,9 @@ node-red-contrib-vcgencmd
 node-red-contrib-os
 node-red-contrib-dht-sensor
 node-red-contrib-cpu
+ncd-red-ads1115       --->>>  https://github.com/ncd-io/ncd-red-ads1115/issues/4
+node-red-contrib-bme280
+
 
 node-red system stats
 http://estadieu.com/2017/01/16/dashboard-raspberrypi-node-red/
