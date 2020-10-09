@@ -1,0 +1,18 @@
+person.giel:
+  icon: /local/images/IMG_3061.jpeg
+binary_sensor.garage_deur:
+  device_class: door
+binary_sensor.keuken_achterdeur:
+  device_class: door
+binary_sensor.gang_voordeur:
+  device_class: door
+device_tracker.gphone_2:
+  entity_picture: /local/images/giel.png
+device_tracker.giel_not_so_binary:
+  entity_picture: /local/images/giel3.png
+device_tracker.mphone_2:
+  entity_picture: /local/images/martine.png
+device_tracker.martine_not_so_binary:
+  entity_picture: /local/images/martine.png
+person.martine:
+  entity_picture: /local/images/martine.png

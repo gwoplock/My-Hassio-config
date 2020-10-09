@@ -1,8 +1,9 @@
 # default: warning
-default: error
+default: warning
 # logs:
-#   # homeassistant.core: debug
-#   homeassistant.event: debug
+#   homeassistant.components.mqtt: debug
+#   homeassistant.helpers.event: debug
+#   homeassistant.core: debug
 #   homeassistant.components.logger: debug
 #   homeassistant.components.history: debug
 #   homeassistant.components.recorder: debug

@@ -115,6 +115,7 @@ https://developers.home-assistant.io/docs/operating-system/debugging/#ssh-access
 ssh root@192.168.79.54 -p 22222
 login
 docker exec -it homeassistant /bin/bash
-py-spy record --pid 233 --duration 120 --output /config/www/spy-startup.svg
-py-spy dump --pid 233
-py-spy top --pid 233
+py-spy record --pid 230 --duration 120 --output /config/www/spy-0.116b5-startup.svg
+py-spy record --pid 230 --duration 600 --output /config/www/spy-0.116b5-10min.svg
+py-spy dump --pid 232
+py-spy top --pid 232
