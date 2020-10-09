@@ -43,10 +43,9 @@
   sensors:
     fotocel_poort_error:
       friendly_name: Foutcel in fout
-      entity_id: input_boolean.fotocel_poort_error
       icon_template: mdi:alert-circle-outline
       value_template: "{{ is_state('input_boolean.fotocel_poort_error', 'on') }}"
-    
+
     nodered_poort_down:
       friendly_name: "NodeRed unavailable"
       device_class: problem
