@@ -1,6 +1,6 @@
 """Support for MQTT message handling."""
 import asyncio
-from functools import partial, wraps
+from functools import lru_cache, partial, wraps
 import inspect
 from itertools import groupby
 import json
@@ -69,6 +69,7 @@ from .const import (
     DEFAULT_QOS,
     DEFAULT_RETAIN,
     DEFAULT_WILL,
+    DOMAIN,
     MQTT_CONNECTED,
     MQTT_DISCONNECTED,
     PROTOCOL_311,
@@ -85,8 +86,6 @@ from .subscription import async_subscribe_topics, async_unsubscribe_topics
 from .util import _VALID_QOS_SCHEMA, valid_publish_topic, valid_subscribe_topic
 
 _LOGGER = logging.getLogger(__name__)
-
-DOMAIN = "mqtt"
 
 DATA_MQTT = "mqtt"
 
@@ -545,7 +544,11 @@ async def async_setup_entry(hass, entry):
 
     conf = _merge_config(entry, conf)
 
-    hass.data[DATA_MQTT] = MQTT(hass, entry, conf,)
+    hass.data[DATA_MQTT] = MQTT(
+        hass,
+        entry,
+        conf,
+    )
 
     await hass.data[DATA_MQTT].async_connect()
 
@@ -635,7 +638,12 @@ class Subscription:
 class MQTT:
     """Home Assistant MQTT client."""
 
-    def __init__(self, hass: HomeAssistantType, config_entry, conf,) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistantType,
+        config_entry,
+        conf,
+    ) -> None:
         """Initialize Home Assistant MQTT client."""
         # We don't import on the top because some integrations
         # should be able to optionally rely on MQTT.
@@ -834,6 +842,7 @@ class MQTT:
             topic, _matcher_for_topic(topic), msg_callback, qos, encoding
         )
         self.subscriptions.append(subscription)
+        self._matching_subscriptions.cache_clear()
 
         # Only subscribe if currently connected.
         if self.connected:
@@ -846,6 +855,7 @@ class MQTT:
             if subscription not in self.subscriptions:
                 raise HomeAssistantError("Can't remove subscription twice")
             self.subscriptions.remove(subscription)
+            self._matching_subscriptions.cache_clear()
 
             if any(other.topic == topic for other in self.subscriptions):
                 # Other subscriptions on topic remaining - don't unsubscribe.
@@ -936,6 +946,14 @@ class MQTT:
         """Message received callback."""
         self.hass.add_job(self._mqtt_handle_message, msg)
 
+    @lru_cache(2048)
+    def _matching_subscriptions(self, topic):
+        subscriptions = []
+        for subscription in self.subscriptions:
+            if subscription.matcher(topic):
+                subscriptions.append(subscription)
+        return subscriptions
+
     @callback
     def _mqtt_handle_message(self, msg) -> None:
         _LOGGER.debug(
@@ -946,11 +964,9 @@ class MQTT:
         )
         timestamp = dt_util.utcnow()
 
-        for subscription in self.subscriptions:
-            try:
-                next(subscription.matcher.iter_match(msg.topic))
-            except StopIteration:
-                continue
+        subscriptions = self._matching_subscriptions(msg.topic)
+
+        for subscription in subscriptions:
 
             payload: SubscribePayloadType = msg.payload
             if subscription.encoding is not None:
@@ -1046,14 +1062,14 @@ def _raise_on_error(result_code: int) -> None:
         )
 
 
-def _matcher_for_topic(topic: str) -> Any:
+def _matcher_for_topic(subscription: str) -> Any:
     # pylint: disable=import-outside-toplevel
     from paho.mqtt.matcher import MQTTMatcher
 
     matcher = MQTTMatcher()
-    matcher[topic] = True
+    matcher[subscription] = True
 
-    return matcher
+    return lambda topic: next(matcher.iter_match(topic), False)
 
 
 class MqttAttributes(Entity):
@@ -1192,7 +1208,9 @@ class MqttAvailability(Entity):
             }
 
         self._availability_sub_state = await async_subscribe_topics(
-            self.hass, self._availability_sub_state, topics,
+            self.hass,
+            self._availability_sub_state,
+            topics,
         )
 
     @callback
@@ -1219,7 +1237,7 @@ async def cleanup_device_registry(hass, device_id):
     """Remove device registry entry if there are no remaining entities or triggers."""
     # Local import to avoid circular dependencies
     # pylint: disable=import-outside-toplevel
-    from . import device_trigger
+    from . import device_trigger, tag
 
     device_registry = await hass.helpers.device_registry.async_get_registry()
     entity_registry = await hass.helpers.entity_registry.async_get_registry()
@@ -1229,6 +1247,7 @@ async def cleanup_device_registry(hass, device_id):
             entity_registry, device_id
         )
         and not await device_trigger.async_get_triggers(hass, device_id)
+        and not tag.async_has_tags(hass, device_id)
     ):
         device_registry.async_remove_device(device_id)
 
@@ -1271,7 +1290,9 @@ class MqttDiscoveryUpdate(Entity):
         async def discovery_callback(payload):
             """Handle discovery update."""
             _LOGGER.info(
-                "Got update for entity with hash: %s '%s'", discovery_hash, payload,
+                "Got update for entity with hash: %s '%s'",
+                discovery_hash,
+                payload,
             )
             old_payload = self._discovery_data[ATTR_DISCOVERY_PAYLOAD]
             debug_info.update_entity_discovery_data(self.hass, payload, self.entity_id)
@@ -1306,7 +1327,10 @@ class MqttDiscoveryUpdate(Entity):
         if not self._removed_from_hass:
             discovery_topic = self._discovery_data[ATTR_DISCOVERY_TOPIC]
             publish(
-                self.hass, discovery_topic, "", retain=True,
+                self.hass,
+                discovery_topic,
+                "",
+                retain=True,
             )
 
     async def async_will_remove_from_hass(self) -> None:
@@ -1450,3 +1474,33 @@ async def websocket_subscribe(hass, connection, msg):
     )
 
     connection.send_message(websocket_api.result_message(msg["id"]))
+
+
+@callback
+def async_subscribe_connection_status(hass, connection_status_callback):
+    """Subscribe to MQTT connection changes."""
+
+    @callback
+    def connected():
+        hass.async_add_job(connection_status_callback, True)
+
+    @callback
+    def disconnected():
+        _LOGGER.error("Calling connection_status_callback, False")
+        hass.async_add_job(connection_status_callback, False)
+
+    subscriptions = {
+        "connect": async_dispatcher_connect(hass, MQTT_CONNECTED, connected),
+        "disconnect": async_dispatcher_connect(hass, MQTT_DISCONNECTED, disconnected),
+    }
+
+    def unsubscribe():
+        subscriptions["connect"]()
+        subscriptions["disconnect"]()
+
+    return unsubscribe
+
+
+def is_connected(hass):
+    """Return if MQTT client is connected."""
+    return hass.data[DATA_MQTT].connected
